@@ -11,22 +11,21 @@
 #
 default: &default
   adapter: mysql2
-  encoding: utf8mb4
-  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
-  username: root
-  password:
-  host: localhost
+  encoding: utf8
+  database: <%= Rails.application.credentials.dig(:RDS_DB_NAME) %>
+  username: <%= Rails.application.credentials.dig(:RDS_USERNAME) %>
+  password: <%= Rails.application.credentials.dig(:RDS_PASSWORD) %>
+  host: <%= Rails.application.credentials.dig(:RDS_HOSTNAME)%>
+  port: <%= Rails.application.credentials.dig(:RDS_PORT) %>
 
 development:
   <<: *default
-  database: RubyApiApp_development
 
 # Warning: The database defined as "test" will be erased and
 # re-generated from your development database when you run "rake".
 # Do not set this db to the same as development or production.
 test:
   <<: *default
-  database: RubyApiApp_test
 
 # As with config/credentials.yml, you never want to store sensitive information,
 # like your database password, in your source code. If your source code is
@@ -49,6 +48,3 @@ test:
 #
 production:
   <<: *default
-  database: RubyApiApp_production
-  username: RubyApiApp
-  password: <%= ENV['RUBYAPIAPP_DATABASE_PASSWORD'] %>
