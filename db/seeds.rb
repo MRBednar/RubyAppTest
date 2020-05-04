@@ -5,3 +5,6 @@
 #
 #   movies = Movie.create([{ name: 'Star Wars' }, { name: 'Lord of the Rings' }])
 #   Character.create(name: 'Luke', movie: movies.first)
+
+SpotifyClientSecret.create(ClientId: '12345', ClientSecret: '09876')
+SpotifyClientSecret.create(ClientId: '23456', ClientSecret: '98765')

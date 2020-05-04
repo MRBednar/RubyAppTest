@@ -1,0 +1,2 @@
+class SpotifyClientSecret < ApplicationRecord
+end
