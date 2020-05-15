@@ -9,7 +9,7 @@ class Api::V1::SpotifyLoginController < ApplicationController
 
     @ClientId = @spotify_client_secret["ClientId"]
     @ClientSecret = @spotify_client_secret["ClientSecret"]
-    redirect = CGI.escape("http://127.0.0.1:3000/api/v1/spotify_login/")
+    redirect = CGI.escape("http://34.212.82.195/api/v1/spotify_login/")
 
     http = Net::HTTP.new(uri.host, uri.port)
     http.use_ssl = true
