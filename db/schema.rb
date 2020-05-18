@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2020_05_13_191713) do
+ActiveRecord::Schema.define(version: 2020_05_17_205244) do
 
   create_table "app_users", options: "ENGINE=InnoDB DEFAULT CHARSET=latin1", force: :cascade do |t|
     t.string "Name", limit: 50
@@ -23,6 +23,14 @@ ActiveRecord::Schema.define(version: 2020_05_13_191713) do
   create_table "spotify_client_secrets", options: "ENGINE=InnoDB DEFAULT CHARSET=latin1", force: :cascade do |t|
     t.string "ClientId"
     t.string "ClientSecret"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+  end
+
+  create_table "spotify_track_infos", options: "ENGINE=InnoDB DEFAULT CHARSET=latin1", force: :cascade do |t|
+    t.string "spotifyId"
+    t.string "trackName"
+    t.string "artistName"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
   end

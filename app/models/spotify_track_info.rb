@@ -1,0 +1,2 @@
+class SpotifyTrackInfo < ApplicationRecord
+end
