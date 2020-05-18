@@ -2,8 +2,8 @@ require 'net/http'
 
 class Api::V1::SpotifyLoginController < ApplicationController
 
-  # GET /spotify_client_secrets
-  def index
+  # GET /spotify_client_secrets/1
+  def show
     @spotify_client_secret = SpotifyClientSecret.find(3)
 
     @ClientId = @spotify_client_secret["ClientId"]
@@ -12,45 +12,50 @@ class Api::V1::SpotifyLoginController < ApplicationController
 
     @bearer = SpotifyLogin()
 
-    playlisturi = URI.parse("https://api.spotify.com/v1/playlists/5y9L2Cy1RIZijyGlosVIvm/tracks")
-    playlistHttp = Net::HTTP.new(playlisturi.host, playlisturi.port)
+    # Get the songs on the playlist from Spotify
+    playlistUri = URI.parse("https://api.spotify.com/v1/playlists/" + params[:id] + "/tracks")
+    playlistHttp = Net::HTTP.new(playlistUri.host, playlistUri.port)
     playlistHttp.use_ssl = true
-    playlistRequest = Net::HTTP::Get.new(playlisturi.request_uri)
+    playlistRequest = Net::HTTP::Get.new(playlistUri.request_uri)
     playlistRequest["authorization"] = "Bearer #{@bearer}"
-    plalistResponse = playlistHttp.request(playlistRequest)
+    playlistResponse = playlistHttp.request(playlistRequest)
+    playlistBody = JSON.parse(playlistResponse.body)
 
-    rBody = JSON.parse(plalistResponse.body)
-
-    items = rBody['items']
-    trackIds = Array.new
-    trackData = Array.new
+    # Organize the json data into something we can work with
+    items = playlistBody['items']
+    playlistTrackIds = Array.new
+    playlistTrackInfo = Array.new
 
     items.each {
       |i|
       artists = i['track']['artists'].first
-      trackData << {name: i['track']['name'], id: i['track']['id'], artist: artists['name']}
-      trackIds << i['track']['id']
+      playlistTrackInfo << {name: i['track']['name'], id: i['track']['id'], artist: artists['name']}
+      playlistTrackIds << i['track']['id']
     }
 
-    trackFeatures = SpotifyAudioFeatures(trackIds)
+    # Get the statistics for the tracks from Spotify
+    playlistTrackFeatures = SpotifyAudioFeatures(playlistTrackIds)
 
+    # Find the average of the current playlist to use in comparison with the new tracks later
     cumulativeDance = 0
     cumulativeEnergy = 0
     cumulativeTempo = 0
     cumulativeValence = 0
 
-    listResults = Array.new
+    playlistTrackData = Array.new
 
-    trackFeatures.each do |t|
+    # Record relevant track information with the track
+    playlistTrackFeatures.each do |t|
       cumulativeDance = cumulativeDance + t['danceability']
       cumulativeEnergy = cumulativeEnergy + t['energy']
       cumulativeTempo = cumulativeTempo + t['tempo']
       cumulativeValence = cumulativeValence + t['valence']
-      td = trackData.find { |z| z[:id] == t['id'] }
-      listResults << {Artist: td[:artist], Name: td[:name], Id: t['id'],Dance: t['danceability'], Energy: t['energy'], Tempo: t['tempo'], Valence: t['valence']}
+      pInfo = playlistTrackInfo.find { |z| z[:id] == t['id'] }
+      playlistTrackData << {Artist: pInfo[:artist], Name: pInfo[:name], Id: t['id'],Dance: t['danceability'], Energy: t['energy'],
+                      Tempo: t['tempo'], Valence: t['valence']}
     end
 
-    trackCount = trackFeatures.count
+    trackCount = playlistTrackFeatures.count
     avgDance = cumulativeDance / trackCount
     avgEnergy = cumulativeEnergy / trackCount
     avgTemp = cumulativeTempo / trackCount
@@ -58,6 +63,7 @@ class Api::V1::SpotifyLoginController < ApplicationController
 
     avgResults = {Dance: avgDance, Energy: avgEnergy, Tempo: avgTemp, Valence: avgValence}
 
+    # Get list of recommended songs from Last.fm
     lastFmUrl = URI.parse("http://ws.audioscrobbler.com/2.0/")
     lastFmApiKey = "22c535a534224ffaa97e1eac4a889f60"
     lastFmQuerryParams = {:method => "track.getsimilar", :api_key => lastFmApiKey, :format => "json", :limit => 100}
@@ -69,7 +75,7 @@ class Api::V1::SpotifyLoginController < ApplicationController
     addedCumulativeTempo = 0
     addedCumulativeValence = 0
 
-    listResults.each do |q|
+    playlistTrackData.each do |q|
       lastFmQuerryParams[:artist] = q[:Artist]
       lastFmQuerryParams[:track] = q[:Name]
       lastFmUrl.query = URI.encode_www_form(lastFmQuerryParams)
@@ -82,21 +88,29 @@ class Api::V1::SpotifyLoginController < ApplicationController
       lastFmResponse = lastFmHttp.request(lastFmRequest)
 
       lastResponse = JSON.parse(lastFmResponse.body)
-      tracklist = lastResponse["similartracks"]["track"]
+      suggestedTracklist = lastResponse["similartracks"]["track"]
 
-      if tracklist.length == 0
+      # If no suggested tracks could be found, skip it
+      if suggestedTracklist.length == 0
         next
       end
+
       similarIds = Array.new
-      tracklist.each { |t|
+
+      # Get the SpotifyTrackId for all the Last.fm suggested tracks
+      suggestedTracklist.each { |t|
         trackName = t["name"]
         artistName = t["artist"]["name"]
+
+        # Try and get the SpotifyTrackId from our DB before pinging the Search endpoint
         storedTrackInfo = SpotifyTrackInfo.where("trackName = ? AND artistName = ?", trackName, artistName)
 
+        # Make sure the data returned isn't empty
         if storedTrackInfo != nil && storedTrackInfo.count > 0
           testId = storedTrackInfo.first
           similarIds << {id: testId["spotifyId"], trackName: trackName, artistName: artistName}
         else
+          # Get the track ID from Spotify, and save that data to our DB
           spotifySearchUri = URI.parse("https://api.spotify.com/v1/search")
           songSub = trackName.gsub(" ", "%20")
           artistSub = artistName.gsub(" ", "%20")
@@ -108,6 +122,9 @@ class Api::V1::SpotifyLoginController < ApplicationController
           searchRequest = Net::HTTP::Get.new(spotifySearchUri.request_uri)
           searchRequest["authorization"] = "Bearer #{@bearer}"
           searchResponse = searchHttp.request(searchRequest)
+          if searchResponse.body.size < 1
+            next
+          end
           sBody = JSON.parse(searchResponse.body)
           searchResult = sBody["tracks"]["items"].first
           if searchResult != nil
@@ -125,11 +142,12 @@ class Api::V1::SpotifyLoginController < ApplicationController
 
       similarIdArray = idString.split(',')
 
+      # Get relevant track information on suggested tracks from Spotify
       similarTracks = SpotifyAudioFeatures(similarIdArray)
 
       similarTrackData = Array.new
       similarTracks.each{|e|
-
+        # Make sure the track data isn't empty
         if e != nil
           similarTrack = similarIds.find {|f| f[:id] == e["id"]}
           similarTrackDataRow = {Dance: e['danceability'], Energy: e['energy'], Tempo: e['tempo'], Valence: e['valence']}
@@ -148,21 +166,25 @@ class Api::V1::SpotifyLoginController < ApplicationController
           similarTrackDataRow[:Tempo] = e['tempo']
           similarTrackDataRow[:Valence] = e['valence']
         end
+        # Make sure the track data isn't empty
         if similarTrackDataRow != nil
           similarTrackData << similarTrackDataRow
         end
       }
 
+      # Check our data, get relevant track data for playlist compare, find the best fit to the playlist song
       if similarTrackData != nil
         bestPick = similarTrackData.min_by{|y| y[:TotalDiff]}
         addedCumulativeDance = addedCumulativeDance + bestPick[:Dance]
         addedCumulativeEnergy = addedCumulativeEnergy + bestPick[:Energy]
         addedCumulativeTempo = addedCumulativeTempo + bestPick[:Tempo]
         addedCumulativeValence = addedCumulativeValence + bestPick[:Valence]
-        bestToAdd << {NewTrackName: bestPick[:trackName], NewArtistName: bestPick[:artistName], OriginalTrackName: q[:Name], OriginalArtist: q[:Artist]}
+        bestToAdd << {NewTrackName: bestPick[:trackName], NewArtistName: bestPick[:artistName],
+                      OriginalTrackName: q[:Name], OriginalArtist: q[:Artist]}
       end
     end
 
+    # Get new playlist averages
     avgAddedDance = addedCumulativeDance / bestToAdd.count
     avgAddedEnergy = addedCumulativeEnergy / bestToAdd.count
     avgAddedTempo = addedCumulativeTempo / bestToAdd.count
@@ -170,6 +192,7 @@ class Api::V1::SpotifyLoginController < ApplicationController
 
     avgAddedResults = {Dance: avgAddedDance, Energy: avgAddedEnergy, Tempo: avgAddedTempo, Valence: avgAddedValence}
 
+    # Render the results
     render :json => {AddedTracks: bestToAdd, OriginalAvg: avgResults, AddedAvg: avgAddedResults}
   end
 end
@@ -190,8 +213,6 @@ def SpotifyLogin()
   authRequest.set_form_data({"grant_type" => "client_credentials"})
 
   authResponse = authHttp.request(authRequest)
-
-  puts authResponse
 
   authBody = JSON.parse(authResponse.body)
 
